@@ -1,0 +1,302 @@
+jdk-8u101-linux-x64.tar.gz
+hadoop-2.7.3.tar.gz
+scala-2.11.8.tgz
+spark-2.0.1-bin-hadoop2.7.tgz
+
+docker pull centos
+
+#----------------------------------------------------
+cd /usr/local
+
+# 创建一个存放带ssh的centos镜像Dockerfile文件的目录
+mkdir DockerImagesFiles/centos7.shh
+
+#创建带ssh的centos的Dockerfile 文件
+vi Dockerfile
+#----------------------------------------------------
+
+# Dockerfile文件内容 --------------------------------
+#基于centos镜像库创建
+FROM centos
+MAINTAINER dys
+#安装ssh
+RUN yum install -y openssh-server sudo
+RUN sed -i 's/UsePAM yes/UsePAM no/g' /etc/ssh/sshd_config
+RUN yum  install -y openssh-clients
+
+#配置root名
+RUN echo "root:123456" | chpasswd
+RUN echo "root   ALL=(ALL)       ALL" >> /etc/sudoers
+#生成ssh key
+RUN ssh-keygen -t dsa -f /etc/ssh/ssh_host_dsa_key
+RUN ssh-keygen -t rsa -f /etc/ssh/ssh_host_rsa_key
+
+#配置sshd服务
+RUN mkdir /var/run/sshd
+EXPOSE 22
+CMD ["/usr/sbin/sshd", "-D"]
+# Dockerfile文件内容 --------------------------------
+
+#----------------------------------------------------
+docker build -t="centos7-ssh" .
+#执行完成后，查看已安装的镜像库
+docker images
+#----------------------------------------------------
+
+
+
+#----------------------------------------------------
+cd /usr/local
+
+# 创建一个存放hadoop镜像Dockerfile文件的目录
+mkdir DockerImagesFiles/hadoop
+
+#创建带ssh的centos的Dockerfile 文件
+vi Dockerfile
+#----------------------------------------------------
+
+
+# Dockerfile文件内容 --------------------------------
+#基于centos7-ssh构建
+FROM centos7-ssh
+#安装java
+ADD jdk-8u101-linux-x64.tar.gz /usr/local/
+RUN mv /usr/local/jdk1.8.0_101 /usr/local/jdk1.8
+#配置JAVA环境变量
+ENV JAVA_HOME /usr/local/jdk1.8
+ENV PATH $JAVA_HOME/bin:$PATH
+#安装hadoop
+ADD hadoop-2.7.3.tar.gz /usr/local
+RUN mv /usr/local/hadoop-2.7.3 /usr/local/hadoop
+#配置hadoop环境变量
+ENV HADOOP_HOME /usr/local/hadoop
+ENV PATH $HADOOP_HOME/bin:$PATH
+
+#安装scala 注意Spark2.0.1对于Scala的版本要求是2.11.x
+ADD scala-2.11.8.tgz /usr/local
+RUN mv /usr/local/scala-2.11.8 /usr/local/scala2.11.8
+
+#配置scala环境变量
+ENV SCALA_HOME /usr/local/scala
+ENV PATH $SCALA_HOME/bin:$PATH
+
+#安装spark
+ADD spark-2.0.1-bin-hadoop2.7.tgz /usr/local
+RUN mv /usr/local/spark-2.0.1-bin-hadoop2.7 /usr/local/spark2.0.1
+
+#配置spark环境变量
+ENV SPARK_HOME /usr/local/spark2.0.1
+ENV PATH $SPARK_HOME/bin:$PATH
+
+#创建hdfs账号
+RUN useradd hdfs
+RUN echo "hdfs:12345678" | chpasswd
+
+RUN yum install -y which sudo
+# Dockerfile文件内容 --------------------------------
+
+#----------------------------------------------------
+docker build -t="hadoop" .
+#执行完成后，查看已安装的镜像库
+docker images
+#----------------------------------------------------
+
+
+docker run -d -P -p 50070:50070 -p 8088:8088 -p 8900:8080 --name master -h master --add-host slave01:172.17.0.3 --add-host slave02:172.17.0.4 hadoop
+docker run -d -P --name slave01 -h slave01 --add-host master:172.17.0.2 --add-host slave02:172.17.0.4  hadoop
+docker run -d -P --name slave02 -h slave02 --add-host master:172.17.0.2 --add-host slave01:172.17.0.3  hadoop
+
+docker exec -it master /bin/bash
+docker exec -it slave01 /bin/bash
+docker exec -it slave02 /bin/bash
+
+#---------------------------------------------------- 
+#在每个容器中执行Master Slave01 Slave02
+#查看已创建的容器
+docker ps -a
+#更改hadoop和spark2.0.1目录所属用户
+chown -R hdfs:hdfs /usr/local/hadoop
+chown -R hdfs:hdfs /usr/local/spark2.0.1
+#----------------------------------------------------
+
+#----------------------------------------------------
+#容器各节点间的SSH免密码登陆
+#切换到hdfs账号
+su hdfs
+#生成hdfs账号的key，执行后会有多个输入提示，不用输入任何内容，全部直接回车即可
+ssh-keygen
+#拷贝到其他节点
+ssh-copy-id -i /home/hdfs/.ssh/id_rsa -p 22 hdfs@master
+ssh-copy-id -i /home/hdfs/.ssh/id_rsa -p 22 hdfs@slave01
+ssh-copy-id -i /home/hdfs/.ssh/id_rsa -p 22 hdfs@slave02
+#验证是否设置成功
+ssh slave01
+#----------------------------------------------------
+
+#----------------------------------------------------配置hadoop
+
+#### hadoop-env.sh 修改指定一行
+export JAVA_HOME=/usr/local/jdk1.8
+
+#### slaves 新增二行
+slave01
+slave02
+
+#### core-site.xml 填入configuration
+<configuration>
+    <property>
+        <name>fs.defaultFS</name>
+        <value>hdfs://master:9000/</value>
+    </property>
+    <property>
+         <name>hadoop.tmp.dir</name>
+         <value>file:/usr/local/hadoop/tmp</value>
+    </property>
+</configuration>
+
+#### hdfs-site.xml 填入configuration
+<configuration>
+    <property>
+        <name>dfs.namenode.secondary.http-address</name>
+        <value>master:9001</value>
+    </property>
+    <property>
+        <name>dfs.webhdfs.enabled</name>
+        <value>true</value>
+    </property>
+    <property>
+        <name>dfs.namenode.name.dir</name>
+        <value>file:/usr/local/hadoop/dfs/name</value>
+    </property>
+    <property>
+        <name>dfs.datanode.data.dir</name>
+        <value>file:/usr/local/hadoop/dfs/data</value>
+    </property>
+    <property>
+        <name>dfs.replication</name>
+        <value>2</value>
+    </property>
+</configuration>
+
+#### mapred-site.xml 复制改名
+cp mapred-site.xml.template mapred-site.xml
+
+#### mapred-site.xml 填入configuration
+<configuration>
+    <property>
+        <name>mapreduce.framework.name</name>
+        <value>yarn</value>
+    </property>
+</configuration>
+
+
+#### yarn-site.xml 填入configuration
+<configuration>
+    <!-- Site specific YARN configuration properties -->
+    <property>
+        <name>yarn.nodemanager.aux-services</name>
+        <value>mapreduce_shuffle</value>
+    </property>
+    <property>
+        <name>yarn.nodemanager.aux-services.mapreduce.shuffle.class</name>
+        <value>org.apache.hadoop.mapred.ShuffleHandler</value>
+    </property>
+    <property>
+        <name>yarn.resourcemanager.address</name>
+        <value>master:8032</value>
+    </property>
+    <property>
+        <name>yarn.resourcemanager.scheduler.address</name>
+        <value>master:8030</value>
+    </property>
+    <property>
+        <name>yarn.resourcemanager.resource-tracker.address</name>
+        <value>master:8035</value>
+    </property>
+    <property>
+        <name>yarn.resourcemanager.admin.address</name>
+        <value>master:8033</value>
+    </property>
+    <property>
+        <name>yarn.resourcemanager.webapp.address</name>
+        <value>master:8088</value>
+    </property>
+</configuration>
+
+#### 复制hadoop
+
+# scp -r /usr/local/hadoop/etc/hadoop/ master:/usr/local/hadoop/etc/hadoop/ --master不需要
+scp -r /usr/local/hadoop/etc/hadoop/* slave01:/usr/local/hadoop/etc/hadoop/
+scp -r /usr/local/hadoop/etc/hadoop/* slave02:/usr/local/hadoop/etc/hadoop/
+
+#### 启动HDFS集群
+hdfs namenode -format                            #格式化namenode
+/usr/local/hadoop/sbin/start-dfs.sh              #启动dfs
+
+
+#### 查看HDFS集群
+# 在 master上执行jps 
+$ jps
+#运行结果应该包含下面的进程
+1200 SecondaryNameNode
+3622 Jps
+988 NameNode
+
+# 在 slave上执行jps 
+$ jps   
+#运行结果应该包含下面的进程
+2213 Jps
+1962 DataNode
+
+#### 完成 http://192.168.99.100:50070
+#----------------------------------------------------配置hadoop
+
+
+#----------------------------------------------------配置三节点Yarn集群
+#### 上面已经配置好 直接启动Yarn集群
+/usr/local/hadoop/sbin/start-yarn.sh
+#### 完成 http://192.168.99.100:8088
+#----------------------------------------------------配置三节点Yarn集群
+
+
+#----------------------------------------------------配置三节点spark集群
+cd /usr/local/spark2.0.1/conf
+
+#### 从配置模板复制
+cp spark-env.sh.template spark-env.sh
+
+#### 添加配置内容
+vi /usr/local/spark2.0.1/conf/spark-env.sh
+
+#### spark-env.sh末尾添加--------------------------------
+export SCALA_HOME=/usr/local/scala2.11.8
+export JAVA_HOME=/usr/local/jdk1.8
+export HADOOP_HOME=/usr/local/hadoop
+export HADOOP_CONF_DIR=$HADOOP_HOME/etc/hadoop
+SPARK_MASTER_IP=master
+SPARK_LOCAL_DIRS=/usr/local/spark2.0.1
+SPARK_DRIVER_MEMORY=1G
+
+#### slaves 新增二行
+slave01
+slave02
+
+# scp -r /usr/local/spark2.0.1/conf master:/usr/local/spark2.0.1/conf --master不需要
+scp -r /usr/local/spark2.0.1/conf slave01:/usr/local/spark2.0.1/conf
+scp -r /usr/local/spark2.0.1/conf slave02:/usr/local/spark2.0.1/conf
+
+/usr/local/spark2.0.1/sbin/start-all.sh
+
+#### 完成 http://192.168.99.100:8900
+#----------------------------------------------------配置三节点spark集群
+
+
+
+50070
+8088
+8900
+
+hdfs namenode -format
+/usr/local/hadoop/sbin/start-dfs.sh
+/usr/local/hadoop/sbin/start-yarn.sh
+/usr/local/spark2.0.1/sbin/start-all.sh

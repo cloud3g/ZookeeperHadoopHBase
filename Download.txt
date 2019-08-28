@@ -1,0 +1,29 @@
+版本是jdk-8u221-linux-x64.tar.gz
+https://pan.baidu.com/s/1GZnUwB3nraObgperKlmBCg 提取码：17xx
+
+jdk-8u141-linux-x64.tar.gz
+https://pan.baidu.com/s/12ST8ti0zJ5spIGah8fbdpg 提取码: hrjd
+
+
+http://archive.apache.org/dist/hadoop/core/hadoop-2.7.3/
+http://archive.apache.org/dist/hadoop/core/hadoop-2.7.3/hadoop-2.7.3.tar.gz
+
+
+http://archive.apache.org/dist/spark/
+http://archive.apache.org/dist/spark/spark-2.0.1/spark-2.0.1-bin-hadoop2.7.tgz
+
+
+http://archive.apache.org/dist/hbase/
+http://archive.apache.org/dist/hbase/1.2.5/hbase-1.2.5-bin.tar.gz
+
+
+http://archive.apache.org/dist/zookeeper/zookeeper-3.4.10/zookeeper-3.4.10.tar.gz
+
+
+https://www.scala-lang.org/download/2.11.8.html
+https://downloads.lightbend.com/scala/2.11.8/scala-2.11.8.tgz
+
+
+https://issues.apache.org/jira/secure/attachment/12436620/ZooInspector.zip
+
+https://www.jianshu.com/p/a1524dccb1e4
